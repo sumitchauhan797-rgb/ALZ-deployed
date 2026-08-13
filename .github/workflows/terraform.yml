@@ -16,7 +16,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: environment/dev
+        working-directory: Environment/preprod
 
     env:
       ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
