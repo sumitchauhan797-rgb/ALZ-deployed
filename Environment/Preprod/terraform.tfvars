@@ -4,7 +4,7 @@ rgs = {
     location = "central India"
   }
   rg2 = {
-    name     = "sumit_rg1"
+    name     = "sum_rg"
     location = "West Europe"
   }
 }
