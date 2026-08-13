@@ -1,2 +1,2 @@
-variable "rgs" {}
+variable "resource_groups" {}
 
