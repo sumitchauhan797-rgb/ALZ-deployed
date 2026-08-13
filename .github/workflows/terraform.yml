@@ -1,7 +1,11 @@
-name: Terraform PR Validation
+name: Terraform Landing Zone CI/CD
 
 on:
   pull_request:
+    branches:
+      - main
+
+  push:
     branches:
       - main
 
@@ -10,13 +14,21 @@ permissions:
 
 jobs:
 
+  # ==========================================================
+  # STAGE 1: PR VALIDATION
+  # ==========================================================
+
   terraform-validation:
+
+    name: Terraform PR Validation
 
     runs-on: ubuntu-latest
 
+    if: github.event_name == 'pull_request'
+
     defaults:
       run:
-        working-directory: environment/dev
+        working-directory: Environment/Preprod
 
     env:
       ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -26,40 +38,195 @@ jobs:
 
     steps:
 
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Terraform Init
-      run: terraform init
 
-    - name: Terraform Format Check
-      run: terraform fmt -check -recursive
+      # --------------------------------------------------------
+      # 2. Setup Terraform
+      # --------------------------------------------------------
 
-    - name: Terraform Validate
-      run: terraform validate
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    - name: Setup TFLint
-      uses: terraform-linters/setup-tflint@v4
 
-    - name: Run TFLint
-      run: |
-        tflint --init
-        tflint
+      # --------------------------------------------------------
+      # 3. Azure Login using Service Principal
+      # --------------------------------------------------------
 
-    - name: Run tfsec
-      uses: aquasecurity/tfsec-action@v1.0.3
+      - name: Azure Login
+        shell: bash
+        run: |
+          az login \
+            --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
 
-    - name: Run Gitleaks
-      uses: gitleaks/gitleaks-action@v2
+          az account set \
+            --subscription "$ARM_SUBSCRIPTION_ID"
 
-    - name: Terraform Plan
-      run: terraform plan -out=tfplan
 
-    - name: Upload Plan
-      uses: actions/upload-artifact@v4
-      with:
-        name: terraform-plan
-        path: environment/dev/tfplan
+      # --------------------------------------------------------
+      # 4. Verify Azure Login
+      # --------------------------------------------------------
+
+      - name: Verify Azure Login
+        run: az account show
+
+
+      # --------------------------------------------------------
+      # 5. Terraform Security Scan
+      # --------------------------------------------------------
+
+      - name: Terraform Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: Environment/Preprod
+          framework: terraform
+          quiet: true
+
+
+      # --------------------------------------------------------
+      # 6. Terraform Init
+      # --------------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init
+
+
+      # --------------------------------------------------------
+      # 7. Terraform Format Check
+      # --------------------------------------------------------
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+
+      # --------------------------------------------------------
+      # 8. Terraform Validate
+      # --------------------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # --------------------------------------------------------
+      # 9. Terraform Plan
+      # --------------------------------------------------------
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+
+  # ==========================================================
+  # STAGE 2: PREPROD DEPLOYMENT
+  # ==========================================================
+
+  terraform-deploy:
+
+    name: Terraform Preprod Deployment
+
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # GitHub Environment approval
+    environment:
+      name: preprod
+
+    defaults:
+      run:
+        working-directory: Environment/Preprod
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+    steps:
+
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+
+      # --------------------------------------------------------
+      # 2. Setup Terraform
+      # --------------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+
+      # --------------------------------------------------------
+      # 3. Azure Login using Service Principal
+      # --------------------------------------------------------
+
+      - name: Azure Login
+        shell: bash
+        run: |
+          az login \
+            --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+
+          az account set \
+            --subscription "$ARM_SUBSCRIPTION_ID"
+
+
+      # --------------------------------------------------------
+      # 4. Verify Azure Login
+      # --------------------------------------------------------
+
+      - name: Verify Azure Login
+        run: az account show
+
+
+      # --------------------------------------------------------
+      # 5. Terraform Init
+      # --------------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init
+
+
+      # --------------------------------------------------------
+      # 6. Terraform Format
+      # --------------------------------------------------------
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+
+      # --------------------------------------------------------
+      # 7. Terraform Validate
+      # --------------------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # --------------------------------------------------------
+      # 8. Terraform Plan
+      # --------------------------------------------------------
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+
+      # --------------------------------------------------------
+      # 9. Terraform Apply
+      # --------------------------------------------------------
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
