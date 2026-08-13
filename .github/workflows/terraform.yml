@@ -1,4 +1,4 @@
-name: Terraform Landing Zone
+name: Terraform Landing Zone CI/CD
 
 on:
   pull_request:
@@ -14,13 +14,14 @@ permissions:
 
 jobs:
 
-  # =========================================================
-  # STAGE 1 - PR VALIDATION
-  # =========================================================
+  # ==========================================================
+  # STAGE 1: PR VALIDATION
+  # ==========================================================
 
   terraform-validation:
 
     name: Terraform PR Validation
+
     runs-on: ubuntu-latest
 
     if: github.event_name == 'pull_request'
@@ -37,77 +38,100 @@ jobs:
 
     steps:
 
-      # -----------------------------------------------------
-      # Checkout
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
 
-      # -----------------------------------------------------
-      # Setup Terraform
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 2. Setup Terraform
+      # --------------------------------------------------------
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
 
-      # -----------------------------------------------------
-      # Security Scan
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 3. Azure Login using Service Principal
+      # --------------------------------------------------------
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+
+      # --------------------------------------------------------
+      # 4. Verify Azure Login
+      # --------------------------------------------------------
+
+      - name: Verify Azure Login
+        run: az account show
+
+
+      # --------------------------------------------------------
+      # 5. Terraform Security Scan
+      # --------------------------------------------------------
 
       - name: Terraform Security Scan
         uses: bridgecrewio/checkov-action@v12
         with:
-          directory: .
+          directory: Environment/Preprod
           framework: terraform
           quiet: true
 
 
-      # -----------------------------------------------------
-      # Terraform Init
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 6. Terraform Init
+      # --------------------------------------------------------
 
       - name: Terraform Init
         run: terraform init
 
 
-      # -----------------------------------------------------
-      # Terraform Format
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 7. Terraform Format Check
+      # --------------------------------------------------------
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
 
-      # -----------------------------------------------------
-      # Terraform Validate
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 8. Terraform Validate
+      # --------------------------------------------------------
 
       - name: Terraform Validate
         run: terraform validate
 
 
-      # -----------------------------------------------------
-      # Terraform Plan
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 9. Terraform Plan
+      # --------------------------------------------------------
 
       - name: Terraform Plan
         run: terraform plan -out=tfplan
 
 
-  # =========================================================
-  # STAGE 2 - DEPLOYMENT
-  # =========================================================
+  # ==========================================================
+  # STAGE 2: PREPROD DEPLOYMENT
+  # ==========================================================
 
   terraform-deploy:
 
     name: Terraform Preprod Deployment
+
     runs-on: ubuntu-latest
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
+    # GitHub Environment approval
     environment:
       name: preprod
 
@@ -123,57 +147,78 @@ jobs:
 
     steps:
 
-      # -----------------------------------------------------
-      # Checkout
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------------
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
 
-      # -----------------------------------------------------
-      # Setup Terraform
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 2. Setup Terraform
+      # --------------------------------------------------------
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
 
-      # -----------------------------------------------------
-      # Terraform Init
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 3. Azure Login using Service Principal
+      # --------------------------------------------------------
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+
+      # --------------------------------------------------------
+      # 4. Verify Azure Login
+      # --------------------------------------------------------
+
+      - name: Verify Azure Login
+        run: az account show
+
+
+      # --------------------------------------------------------
+      # 5. Terraform Init
+      # --------------------------------------------------------
 
       - name: Terraform Init
         run: terraform init
 
 
-      # -----------------------------------------------------
-      # Terraform Format
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 6. Terraform Format
+      # --------------------------------------------------------
 
-      - name: Terraform Format
+      - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
 
-      # -----------------------------------------------------
-      # Terraform Validate
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 7. Terraform Validate
+      # --------------------------------------------------------
 
       - name: Terraform Validate
         run: terraform validate
 
 
-      # -----------------------------------------------------
-      # Terraform Plan
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 8. Terraform Plan
+      # --------------------------------------------------------
 
       - name: Terraform Plan
         run: terraform plan -out=tfplan
 
 
-      # -----------------------------------------------------
-      # Terraform Apply
-      # -----------------------------------------------------
+      # --------------------------------------------------------
+      # 9. Terraform Apply
+      # --------------------------------------------------------
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
