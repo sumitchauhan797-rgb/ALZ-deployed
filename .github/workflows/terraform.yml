@@ -1,7 +1,11 @@
-name: Terraform PR Validation
+name: Terraform Landing Zone
 
 on:
   pull_request:
+    branches:
+      - main
+
+  push:
     branches:
       - main
 
@@ -10,13 +14,20 @@ permissions:
 
 jobs:
 
+  # =========================================================
+  # STAGE 1 - PR VALIDATION
+  # =========================================================
+
   terraform-validation:
 
+    name: Terraform PR Validation
     runs-on: ubuntu-latest
+
+    if: github.event_name == 'pull_request'
 
     defaults:
       run:
-        working-directory: Environment/preprod
+        working-directory: Environment/Preprod
 
     env:
       ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -26,40 +37,143 @@ jobs:
 
     steps:
 
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      # -----------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Terraform Init
-      run: terraform init
 
-    - name: Terraform Format Check
-      run: terraform fmt -check -recursive
+      # -----------------------------------------------------
+      # Setup Terraform
+      # -----------------------------------------------------
 
-    - name: Terraform Validate
-      run: terraform validate
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    - name: Setup TFLint
-      uses: terraform-linters/setup-tflint@v4
 
-    - name: Run TFLint
-      run: |
-        tflint --init
-        tflint
+      # -----------------------------------------------------
+      # Security Scan
+      # -----------------------------------------------------
 
-    - name: Run tfsec
-      uses: aquasecurity/tfsec-action@v1.0.3
+      - name: Terraform Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
 
-    - name: Run Gitleaks
-      uses: gitleaks/gitleaks-action@v2
 
-    - name: Terraform Plan
-      run: terraform plan -out=tfplan
+      # -----------------------------------------------------
+      # Terraform Init
+      # -----------------------------------------------------
 
-    - name: Upload Plan
-      uses: actions/upload-artifact@v4
-      with:
-        name: terraform-plan
-        path: environment/dev/tfplan
+      - name: Terraform Init
+        run: terraform init
+
+
+      # -----------------------------------------------------
+      # Terraform Format
+      # -----------------------------------------------------
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+
+      # -----------------------------------------------------
+      # Terraform Validate
+      # -----------------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # -----------------------------------------------------
+      # Terraform Plan
+      # -----------------------------------------------------
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+
+  # =========================================================
+  # STAGE 2 - DEPLOYMENT
+  # =========================================================
+
+  terraform-deploy:
+
+    name: Terraform Preprod Deployment
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    environment:
+      name: preprod
+
+    defaults:
+      run:
+        working-directory: Environment/Preprod
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+    steps:
+
+      # -----------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+
+      # -----------------------------------------------------
+      # Setup Terraform
+      # -----------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+
+      # -----------------------------------------------------
+      # Terraform Init
+      # -----------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init
+
+
+      # -----------------------------------------------------
+      # Terraform Format
+      # -----------------------------------------------------
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+
+      # -----------------------------------------------------
+      # Terraform Validate
+      # -----------------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+
+      # -----------------------------------------------------
+      # Terraform Plan
+      # -----------------------------------------------------
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+
+      # -----------------------------------------------------
+      # Terraform Apply
+      # -----------------------------------------------------
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
