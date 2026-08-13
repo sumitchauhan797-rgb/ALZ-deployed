@@ -59,15 +59,16 @@ jobs:
       # --------------------------------------------------------
 
       - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: >-
-            {
-              "clientId": "${{ secrets.ARM_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.ARM_CLIENT_SECRET }}",
-              "subscriptionId": "${{ secrets.ARM_SUBSCRIPTION_ID }}",
-              "tenantId": "${{ secrets.ARM_TENANT_ID }}"
-            }
+        shell: bash
+        run: |
+          az login \
+            --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+
+          az account set \
+            --subscription "$ARM_SUBSCRIPTION_ID"
 
 
       # --------------------------------------------------------
@@ -171,15 +172,16 @@ jobs:
       # --------------------------------------------------------
 
       - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: >-
-            {
-              "clientId": "${{ secrets.ARM_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.ARM_CLIENT_SECRET }}",
-              "subscriptionId": "${{ secrets.ARM_SUBSCRIPTION_ID }}",
-              "tenantId": "${{ secrets.ARM_TENANT_ID }}"
-            }
+        shell: bash
+        run: |
+          az login \
+            --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+
+          az account set \
+            --subscription "$ARM_SUBSCRIPTION_ID"
 
 
       # --------------------------------------------------------
