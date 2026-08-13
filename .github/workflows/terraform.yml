@@ -114,7 +114,19 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v4
 
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
       # --------------------------------------------------------
       # 9. Terraform Plan
       # --------------------------------------------------------
