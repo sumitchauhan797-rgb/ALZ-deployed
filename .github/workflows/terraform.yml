@@ -1,4 +1,4 @@
-name: Terraform Landing Zone CI/CD
+name: Terraform Landing Zone CI-CD
 
 on:
   pull_request:
@@ -9,32 +9,51 @@ on:
     branches:
       - main
 
+  workflow_dispatch:
+
+
+# ============================================================
+# GLOBAL PERMISSIONS
+# ============================================================
+
 permissions:
   contents: read
+  id-token: write
+  pull-requests: write
+
+
+# ============================================================
+# GLOBAL ENVIRONMENT
+# ============================================================
+
+env:
+  TF_WORKING_DIR: Environment/Preprod
+
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+
+# ============================================================
+# JOB 1
+# PR VALIDATION / SECURITY SCANNING
+# ============================================================
 
 jobs:
-
-  # ==========================================================
-  # STAGE 1: PR VALIDATION
-  # ==========================================================
 
   terraform-validation:
 
     name: Terraform PR Validation
 
-    runs-on: ubuntu-latest
-
+    # Run only for Pull Request
     if: github.event_name == 'pull_request'
+
+    runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: Environment/Preprod
-
-    env:
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
 
     steps:
 
@@ -43,24 +62,23 @@ jobs:
       # --------------------------------------------------------
 
       - name: Checkout Repository
+
         uses: actions/checkout@v4
 
-
-      # --------------------------------------------------------
-      # 2. Setup Terraform
-      # --------------------------------------------------------
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        with:
+          fetch-depth: 0
 
 
       # --------------------------------------------------------
-      # 3. Azure Login using Service Principal
+      # 2. Azure Login
       # --------------------------------------------------------
 
       - name: Azure Login
+
         shell: bash
+
         run: |
+
           az login \
             --service-principal \
             --username "$ARM_CLIENT_ID" \
@@ -72,82 +90,385 @@ jobs:
 
 
       # --------------------------------------------------------
-      # 4. Verify Azure Login
+      # 3. Verify Azure Login
       # --------------------------------------------------------
 
       - name: Verify Azure Login
-        run: az account show
+
+        shell: bash
+
+        run: |
+
+          az account show --output table
+
+
+      # ========================================================
+      # SECURITY SCANNING
+      # ========================================================
+
+      # --------------------------------------------------------
+      # 4. Create Custom Gitleaks Configuration
+      # --------------------------------------------------------
+
+      - name: Create Gitleaks Configuration
+
+        working-directory: ${{ github.workspace }}
+
+        shell: bash
+
+        run: |
+
+          cat > .gitleaks.toml <<'EOF'
+
+          title = "Azure Terraform Landing Zone Secret Detection"
+
+          [extend]
+          useDefault = true
+
+
+          # ====================================================
+          # ADMIN PASSWORD
+          # ====================================================
+
+          [[rules]]
+
+          id = "admin-password"
+
+          description = "Detect hardcoded admin password"
+
+          regex = '''(?i)(admin[_-]?password|administrator[_-]?password|user[_-]?password)\s*[:=]\s*["']([^"'\r\n]{4,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "admin_password",
+            "administrator_password",
+            "user_password"
+          ]
+
+          tags = [
+            "password",
+            "admin",
+            "terraform",
+            "azure"
+          ]
+
+
+          # ====================================================
+          # GENERIC PASSWORD
+          # ====================================================
+
+          [[rules]]
+
+          id = "generic-password"
+
+          description = "Detect hardcoded passwords"
+
+          regex = '''(?i)(password|passwd|pwd)\s*[:=]\s*["']([^"'\r\n]{4,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "password",
+            "passwd",
+            "pwd"
+          ]
+
+          tags = [
+            "password",
+            "credentials"
+          ]
+
+
+          # ====================================================
+          # AZURE CLIENT SECRET
+          # ====================================================
+
+          [[rules]]
+
+          id = "azure-client-secret"
+
+          description = "Detect Azure Service Principal Client Secret"
+
+          regex = '''(?i)(client[_-]?secret|arm[_-]?client[_-]?secret)\s*[:=]\s*["']([^"'\r\n]{8,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "client_secret",
+            "client-secret",
+            "ARM_CLIENT_SECRET"
+          ]
+
+          tags = [
+            "azure",
+            "client-secret"
+          ]
+
+
+          # ====================================================
+          # API KEY
+          # ====================================================
+
+          [[rules]]
+
+          id = "api-key"
+
+          description = "Detect hardcoded API keys"
+
+          regex = '''(?i)(api[_-]?key|apikey)\s*[:=]\s*["']([A-Za-z0-9_\-]{16,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "api_key",
+            "apikey"
+          ]
+
+          tags = [
+            "api-key",
+            "secret"
+          ]
+
+
+          # ====================================================
+          # ACCESS TOKEN
+          # ====================================================
+
+          [[rules]]
+
+          id = "access-token"
+
+          description = "Detect hardcoded access tokens"
+
+          regex = '''(?i)(access[_-]?token|auth[_-]?token|bearer[_-]?token)\s*[:=]\s*["']([^"'\r\n]{16,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "access_token",
+            "auth_token",
+            "bearer_token"
+          ]
+
+          tags = [
+            "token",
+            "authentication"
+          ]
+
+
+          # ====================================================
+          # AZURE STORAGE ACCOUNT KEY
+          # ====================================================
+
+          [[rules]]
+
+          id = "azure-storage-key"
+
+          description = "Detect Azure Storage Account Key"
+
+          regex = '''(?i)(account[_-]?key|storage[_-]?account[_-]?key)\s*[:=]\s*["']([A-Za-z0-9+/=]{40,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "account_key",
+            "storage_account_key",
+            "AccountKey"
+          ]
+
+          tags = [
+            "azure",
+            "storage",
+            "key"
+          ]
+
+
+          # ====================================================
+          # PRIVATE KEY
+          # ====================================================
+
+          [[rules]]
+
+          id = "private-key"
+
+          description = "Detect private keys"
+
+          regex = '''-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'''
+
+          tags = [
+            "private-key",
+            "cryptography"
+          ]
+
+
+          # ====================================================
+          # DATABASE PASSWORD
+          # ====================================================
+
+          [[rules]]
+
+          id = "database-password"
+
+          description = "Detect database passwords"
+
+          regex = '''(?i)(db[_-]?password|database[_-]?password|sql[_-]?password|mysql[_-]?password|postgres[_-]?password)\s*[:=]\s*["']([^"'\r\n]{4,})["']'''
+
+          secretGroup = 2
+
+          keywords = [
+            "db_password",
+            "database_password",
+            "sql_password",
+            "mysql_password",
+            "postgres_password"
+          ]
+
+          tags = [
+            "database",
+            "password"
+          ]
+
+          EOF
 
 
       # --------------------------------------------------------
-      # 5. Terraform Security Scan
+      # 5. Gitleaks Secret Scan
       # --------------------------------------------------------
 
-      - name: Terraform Security Scan
-        uses: bridgecrewio/checkov-action@v12
+      - name: Run Gitleaks
+
+        uses: gitleaks/gitleaks-action@v3
+
+        env:
+
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
+
+          GITLEAKS_ENABLE_COMMENTS: false
+
+
+      # --------------------------------------------------------
+      # 6. Setup Terraform
+      # --------------------------------------------------------
+
+      - name: Setup Terraform
+
+        uses: hashicorp/setup-terraform@v3
+
         with:
-          directory: Environment/Preprod
-          framework: terraform
-          quiet: true
+          terraform_version: 1.15.8
 
 
       # --------------------------------------------------------
-      # 6. Terraform Init
+      # 7. Terraform Init
       # --------------------------------------------------------
 
       - name: Terraform Init
-        run: terraform init
+
+        run: |
+
+          terraform init -input=false
 
 
       # --------------------------------------------------------
-      # 7. Terraform Format Check
+      # 8. Terraform Format Check
       # --------------------------------------------------------
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+
+        run: |
+
+          terraform fmt -check -recursive
 
 
       # --------------------------------------------------------
-      # 8. Terraform Validate
+      # 9. TFLint
+      # --------------------------------------------------------
+
+      - name: Setup TFLint
+
+        uses: terraform-linters/setup-tflint@v5
+
+        with:
+          tflint_version: latest
+
+
+      - name: Run TFLint
+
+        run: |
+
+          tflint --init
+
+          tflint --format compact
+
+
+      # --------------------------------------------------------
+      # 10. tfsec Security Scan
+      # --------------------------------------------------------
+
+      - name: Run tfsec
+
+        uses: aquasecurity/tfsec-action@v1.0.3
+
+        with:
+
+          working_directory: ${{ env.TF_WORKING_DIR }}
+
+          soft_fail: false
+
+
+      # --------------------------------------------------------
+      # 11. Terraform Validate
       # --------------------------------------------------------
 
       - name: Terraform Validate
-        run: terraform validate
+
+        run: |
+
+          terraform validate
 
 
       # --------------------------------------------------------
-      # 9. Terraform Plan
+      # 12. Terraform Plan
       # --------------------------------------------------------
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+
+        run: |
+
+          terraform plan \
+            -input=false \
+            -out=tfplan
 
 
-  # ==========================================================
-  # STAGE 2: PREPROD DEPLOYMENT
-  # ==========================================================
+# ============================================================
+# JOB 2
+# PREPROD DEPLOYMENT
+# ============================================================
 
-  terraform-deploy:
+  terraform-preprod-deployment:
 
     name: Terraform Preprod Deployment
 
-    runs-on: ubuntu-latest
-
+    # Run only after code is merged into main
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-    # GitHub Environment approval
+    runs-on: ubuntu-latest
+
+    # IMPORTANT:
+    # This environment must have Required Reviewers configured
     environment:
-      name: preprod
+      name: Preprod
+
+    concurrency:
+      group: terraform-preprod
+      cancel-in-progress: false
 
     defaults:
       run:
-        working-directory: Environment/Preprod
-
-    env:
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
 
     steps:
 
@@ -156,24 +477,23 @@ jobs:
       # --------------------------------------------------------
 
       - name: Checkout Repository
+
         uses: actions/checkout@v4
 
-
-      # --------------------------------------------------------
-      # 2. Setup Terraform
-      # --------------------------------------------------------
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        with:
+          fetch-depth: 0
 
 
       # --------------------------------------------------------
-      # 3. Azure Login using Service Principal
+      # 2. Azure Login
       # --------------------------------------------------------
 
       - name: Azure Login
+
         shell: bash
+
         run: |
+
           az login \
             --service-principal \
             --username "$ARM_CLIENT_ID" \
@@ -185,11 +505,26 @@ jobs:
 
 
       # --------------------------------------------------------
-      # 4. Verify Azure Login
+      # 3. Verify Azure Login
       # --------------------------------------------------------
 
       - name: Verify Azure Login
-        run: az account show
+
+        run: |
+
+          az account show --output table
+
+
+      # --------------------------------------------------------
+      # 4. Setup Terraform
+      # --------------------------------------------------------
+
+      - name: Setup Terraform
+
+        uses: hashicorp/setup-terraform@v3
+
+        with:
+          terraform_version: 1.15.8
 
 
       # --------------------------------------------------------
@@ -197,7 +532,10 @@ jobs:
       # --------------------------------------------------------
 
       - name: Terraform Init
-        run: terraform init
+
+        run: |
+
+          terraform init -input=false
 
 
       # --------------------------------------------------------
@@ -205,7 +543,10 @@ jobs:
       # --------------------------------------------------------
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+
+        run: |
+
+          terraform fmt -check -recursive
 
 
       # --------------------------------------------------------
@@ -213,7 +554,10 @@ jobs:
       # --------------------------------------------------------
 
       - name: Terraform Validate
-        run: terraform validate
+
+        run: |
+
+          terraform validate
 
 
       # --------------------------------------------------------
@@ -221,7 +565,12 @@ jobs:
       # --------------------------------------------------------
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+
+        run: |
+
+          terraform plan \
+            -input=false \
+            -out=tfplan
 
 
       # --------------------------------------------------------
@@ -229,4 +578,10 @@ jobs:
       # --------------------------------------------------------
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+
+        run: |
+
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            tfplan

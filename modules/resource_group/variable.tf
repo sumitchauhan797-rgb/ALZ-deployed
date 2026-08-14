@@ -1,2 +1,4 @@
-variable "rgs" {}
+variable "resource_groups" {
+     type = map(any)
+}
 
