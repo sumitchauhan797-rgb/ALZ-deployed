@@ -43,7 +43,9 @@ jobs:
       # --------------------------------------------------------
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
 
       # --------------------------------------------------------
@@ -126,7 +128,9 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.3
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # --------------------------------------------------------
       # 9. Terraform Plan
       # --------------------------------------------------------
